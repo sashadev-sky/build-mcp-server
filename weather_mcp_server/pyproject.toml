@@ -1,7 +1,7 @@
 [project]
 name = "weather"
 version = "0.1.0"
-description = "Add your description here"
+description = "A server that exposes two tools: `get_alerts` and `get_forecast`."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
