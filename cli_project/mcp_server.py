@@ -17,13 +17,6 @@ docs = {
     "These specifications define the technical requirements for the equipment.",
 }
 
-# TODO: Write a tool to read a doc
-# TODO: Write a tool to edit a doc
-# TODO: Write a resource to return all doc id's
-# TODO: Write a resource to return the contents of a particular doc
-# TODO: Write a prompt to rewrite a doc in markdown format
-# TODO: Write a prompt to summarize a doc
-
 from pydantic import Field
 from mcp.server.fastmcp.prompts import base
 
@@ -88,6 +81,28 @@ def format_document(
 
     Add in headers, bullet points, tables, etc as necessary. Feel free to add in extra text, but don't change the meaning of the report.
     Use the 'edit_document' tool to edit the document. After the document has been edited, respond with the final version of the doc. Don't explain your changes.
+    """
+
+    return [base.UserMessage(prompt)]
+
+
+@mcp.prompt(
+    name="summarize",
+    description=
+    "Summarizes the contents of a document in a few concise sentences.",
+)
+def summarize_document(
+    doc_id: str = Field(description="Id of the document to summarize"),
+) -> list[base.Message]:
+    prompt = f"""
+    Your goal is to produce a concise summary of a document.
+
+    The id of the document you need to summarize is:
+    <document_id>
+    {doc_id}
+    </document_id>
+
+    Use the 'read_doc_contents' tool to fetch the document's contents, then write a clear summary in 2-4 sentences. Focus on the key points & main conclusions. Don't include any preamble or restate the document id.
     """
 
     return [base.UserMessage(prompt)]

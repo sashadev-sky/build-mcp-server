@@ -22,7 +22,7 @@
 
 > 💡 In:
 > - `weather_mcp_server`, **Claude for Desktop** is the host & spawns the client internally.
-> - `cli_project`, `main.py` is the host & `MCPClient` is the client it embeds.
+> - `cli_project`, `main.py` is the host & your wrapper class, for ex. `MCPClient`, is the client it embeds.
 
 </details>
 
@@ -72,12 +72,22 @@ Custom transports (WebSockets, Unix sockets, etc.) are allowed but non-standard.
   > ⚠️ **stdio gotcha**: `stdout` IS the JSON-RPC channel. The 1st non-JSON byte on it (a stray `print()`, a `tqdm` bar, a debug log from a dep) silently disconnects the client, no crash, no error. Python's `logging` & `FastMCP` both default to `stderr`, which is safe for the protocol, but **high-volume stderr can still trip up hosts**: Claude for Desktop, for ex., surfaces `stderr` noise as red error indicators.
   > - That's why `cli_project` sets `log_level="ERROR"` in `mcp = FastMCP("docs", log_level="ERROR")` (drops `DEBUG`/`INFO`/`WARNING`, so only real errors reach stderr) on top of stdio's "never touch stdout" rule.
 
-Servers can expose 3 main types of capabilities (**primitives**):
+Servers can expose 3 main types of capabilities (**primitives**), distinguished by **who decides when to invoke them**:
+
+| primitive     | controlled by                | results used by | used for                                                       |
+| ------------- | ---------------------------- | --------------- | -------------------------------------------------------------- |
+| **Tools**     | **Claude** (model decides)   | Claude          | Giving Claude additional functionality (read APIs, run code, mutate state) |
+| **Resources** | **the host app** (app decides) | the host app    | Getting data into the app, adding context to messages          |
+| **Prompts**   | **the user** (user decides)  | varies          | User-triggered workflows: slash commands, buttons, menu options |
+
+FastMCP API for each:
 
 1. **Tools** (**`@mcp.tool()`**): functions the LLM can call (host mediates user approval).
    - By default: type hints → schema, function name → tool name, docstring → description. Pass **`@mcp.tool(name="...", description="...")`** to override when you want the public API to differ from Python identifiers.
 2. **Resources** (**`@mcp.resource(uri)`**): read-only data the host can fetch (e.g. file contents, API responses, DB rows).
+    - Like GET handlers in an HTTP server: fetch information, never mutate state. Use **URI templates** (`docs://documents/{doc_id}`) to handle a family of resources w/ one decorator.
 3. **Prompts** (**`@mcp.prompt()`**): reusable message templates the host can surface to the user.
+   - Returns a `list[base.Message]` that the host can either send straight to Claude or display in a UI. Typically exposed as `/slash` commands in chat UIs.
 
 Ex:
 
@@ -105,6 +115,83 @@ if __name__ == "__main__":
 ```
 
 The decorator auto-generates JSON schemas & **`mcp.run()`** wires up the transport.
+
+</details>
+
+<details><summary><b>🔌 MCP client w/ <code>ClientSession</code></b></summary>
+
+The [`mcp` Python SDK](https://github.com/modelcontextprotocol/python-sdk) provides the primitives; you wrap them in your own class.
+
+**Core SDK pieces** (from `mcp` & `mcp.client.*`):
+
+| piece                                                | purpose                                                                                                                                                              |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`ClientSession(read, write)`**                     | High-level JSON-RPC session. Exposes `list_tools()`, `call_tool()`, `list_resources()`, `read_resource()`, `list_prompts()`, `get_prompt()`                          |
+| **`StdioServerParameters(command, args, env)`**      | How to launch the server subprocess for stdio                                                                                                                        |
+| **`stdio_client(params)`**                           | Async context manager that spawns the server & returns `(read, write)` streams                                                                                       |
+| **`streamablehttp_client(url, ...)`**                | Same idea, but for **Streamable HTTP** transport (`mcp.client.streamable_http`)                                                                                      |
+| **`AsyncExitStack`**                                 | Composes transport + session lifecycles so cleanup happens in the right order (close session before transport)                                                       |
+
+**Lifecycle** (4 steps):
+
+1. **Set up transport** → `stdio_client(params)` (or `streamablehttp_client(url)`).
+2. **Wrap streams in a session** → `ClientSession(read, write)`.
+3. **Handshake** → `await session.initialize()` (negotiates capabilities w/ server).
+4. **Cleanup** → close session, then transport. `AsyncExitStack` handles ordering.
+
+Ex:
+
+```python
+import asyncio
+from contextlib import AsyncExitStack
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+async def main():
+    params = StdioServerParameters(command="uv", args=["run", "mcp_server.py"])
+
+    async with AsyncExitStack() as stack:
+        read, write = await stack.enter_async_context(stdio_client(params))
+        session = await stack.enter_async_context(ClientSession(read, write))
+        await session.initialize()
+
+        tools = (await session.list_tools()).tools
+        result = await session.call_tool("read_doc_contents", {"doc_id": "plan.md"})
+        print(result)
+
+asyncio.run(main())
+```
+
+> ⚠️ **`initialize()` is mandatory**: skip it & every subsequent call (`list_tools`, `call_tool`, etc.) fails. It's the JSON-RPC handshake where the client & server exchange capabilities.
+
+> 💡 **Wrap it in a class** implementing Python's [**async context manager protocol**](https://docs.python.org/3/reference/datamodel.html#asynchronous-context-managers) (`__aenter__` / `__aexit__`, the async versions of `__enter__` / `__exit__`). That lets callers write `async with MCPClient(...) as client:` & get **automatic cleanup on exit (even on exception)**, no manual `try`/`finally` to close the session & subprocess. See [`cli_project/mcp_client.py`](./cli_project/mcp_client.py), which also adds typed helper methods (`call_tool`, `read_resource`, etc.) over the raw session.
+
+> 📝 **Streamable HTTP variant**: swap `stdio_client(params)` for `streamablehttp_client(url)`. Everything else (session, `initialize()`, all `session.*` calls) is identical. The SDK fully abstracts transport at the `ClientSession` layer.
+
+</details>
+
+<details><summary><b>🔄 End-to-end: the tool-calling loop</b></summary>
+
+**When the user asks a question**, the host runs a back-&-forth between Claude (decides what to do) & the MCP server (runs the code), w/ the client mediating every server interaction. Each turn of the loop:
+
+1. **[client]** `await client.list_tools()` → JSON-RPC `tools/list` request to server.
+2. **[server]** Returns the list of registered `@mcp.tool()` schemas (name, description, input schema).
+3. **[host]** Sends user message + tool schemas to Claude (Anthropic API).
+4. **[Claude]** Reasons about the request, decides it needs a tool.
+5. **[Claude]** Picks one (e.g. `read_doc_contents`) & emits a `tool_use` block w/ args.
+6. **[client]** `await client.call_tool(name, args)` → JSON-RPC `tools/call` request to server.
+7. **[server]** Runs the decorated Python function, returns the result as a `CallToolResult`.
+8. **[host]** Sends the tool result back to Claude as a `tool_result` message.
+9. **[Claude]** Formulates a natural language response from the tool output.
+10. **[host]** Displays the response to the user.
+
+**Roles**:
+- **[client]** = bridge. Steps 1 & 6 (sends JSON-RPC requests, returns parsed results).
+- **[server]** = executor. Steps 2 & 7 (handles `tools/list`, `tools/call`, runs the tool code).
+- **[host]** = orchestrator. Steps 3, 8, 10 (Anthropic API calls, message threading, UI).
+- **[Claude]** = brain. Steps 4, 5, 9 (reasoning, tool selection, response generation).
+
+> 💡 If Claude doesn't need a tool, steps 1-2 & 6-7 still happen (the host always advertises tools), but Claude skips steps 5-8 & goes straight to 9-10. Tool use is Claude's choice per turn.
 
 </details>
 
@@ -150,6 +237,8 @@ The decorator auto-generates JSON schemas & **`mcp.run()`** wires up the transpo
 
 ### The server inspector
 
+From inside the project directory:
+
 1) Make sure your Python environment is activated
     ```shell
     /opt/homebrew/bin/python3 -m venv .venv
@@ -158,7 +247,8 @@ The decorator auto-generates JSON schemas & **`mcp.run()`** wires up the transpo
 2) Run the **server inspector** with:
 
     ```shell
-    mcp dev mcp_server.py
+    # mcp dev mcp_server.py or mcp dev weather.py
+    mcp dev <server-file>
     ```
 
     This starts a development server on port 6277 and gives you a local URL to open in your browser. The inspector interface will load, showing the MCP Inspector dashboard.
