@@ -145,6 +145,32 @@ The decorator auto-generates JSON schemas & **`mcp.run()`** wires up the transpo
 #### ❥ [CLI Chat](./cli_project)
 -  **Server**: all 3 primitives, plus uses `pydantic.Field` for richer parameter descriptions.
 
+
+## Debugging
+
+### The server inspector
+
+1) Make sure your Python environment is activated
+    ```shell
+    /opt/homebrew/bin/python3 -m venv .venv
+    source .venv/bin/activate
+    ```
+2) Run the **server inspector** with:
+
+    ```shell
+    mcp dev mcp_server.py
+    ```
+
+    This starts a development server on port 6277 and gives you a local URL to open in your browser. The inspector interface will load, showing the MCP Inspector dashboard.
+
+3) Click the "Connect" button on the left side to start your MCP server.
+    - To test your tools:
+      1. Navigate to the Tools section
+      2. Click "List Tools" to see all available tools
+      3. Select a tool to open its testing interface
+      4. Fill in the required parameters
+      5. Click "Run Tool" to execute and see results
+
 ## Resources
 - [Model Context Protocol Python SDK](https://github.com/modelcontextprotocol/python-sdk)
 - [Model Context Protocol Docs](https://modelcontextprotocol.io/docs)
