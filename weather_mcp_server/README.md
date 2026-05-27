@@ -3,6 +3,7 @@
 An **MCP server** that exposes 2 **tools**:
 
 1. `get_alerts`
+   - _"what are weather alerts for NY?"_
 2. `get_forecast`
 
 To use, run the server then connect it to an **MCP host** (in this case, **Claude for Desktop**).
