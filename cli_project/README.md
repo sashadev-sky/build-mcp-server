@@ -11,54 +11,50 @@ MCP Chat is a **command-line interface application** that enables interactive ch
 - The doc's contents will automatically be included as context
 - Users can run a "command" with "/command_name"
 
-**Important Architecture Note!**
-In real-world projects, you typically implement either an **MCP client** or an **MCP server**, not both. You might create:
-- An MCP server to expose your service to other developers
-- An MCP client to connect to existing MCP servers
+## Implementation
 
-Our project will implement both just so we understand how they work:
-- **MCP server**: we created an MCP server that manages documents stored in memory. The server will provide two essential tools:
-  1. One to read document contents and
-  2. One to update them through find-and-replace operations.
+**Host, client, & server**:
+> `main.py` is the host & **`MCPClient`** is the client it embeds.
+- **MCP host**: `main.py`
+  - <u>Owns the LLM session</u>: the Anthropic client lives in `main.py` via **`Anthropic()`**
+  - <u>Decides which servers to launch</u>: `main.py` calls **`MCPClient(command=..., args=...)`**
+  - <u>Mediates user consent / input</u>: the CLI loop in `main.py`
+- **MCP server**: an MCP server that manages documents stored in memory. Provides:
+  1. **Tools**: 2 essential tools with custom `name`s & `description`s + uses **`pydantic.Field`** for richer parameter descriptions.
+     1. Read document contents
+     2. Update document contents through find-and-replace operations.
+  1. **Resources**: with MIME types
+  1. **Prompts**: that return message lists.
+- **MCP client**: `MCPClient`
+
 
 ## Prerequisites
 
-- Python >=3.10,<3.14
+- Python >=3.10,\<3.14
 - Anthropic API Key
 
 ## Setup
 
-### Step 1: Configure the environment variables
+### Configure the environment variables
 
-1. Create or edit the `.env` file in the project root and verify that the following variables are set correctly:
+Create or edit the `.env` file in this project root and verify that the following variables are set correctly:
 
-```
+```sh
 ANTHROPIC_API_KEY=""  # Enter your Anthropic API secret key
 ```
 
-### Step 2: Install dependencies
+### Install dependencies
 
-#### Option 1: Setup with uv
-
-[uv](https://github.com/astral-sh/uv) is a fast Python package installer and resolver.
-
-1) Install uv, if not already installed:
-
-```bash
-cd cli_project
-pip install uv
-```
-
-2) Pin the project to Python 3.13 so `uv` grabs a prebuilt wheel
+Pin the project to Python 3.13 so `uv` grabs a prebuilt wheel
 
 ```shell
-rm -rf uv.lock
+cd cli_project
 uv python install 3.13
 uv venv --python 3.13
 uv sync
 ```
 
-3) Run the project
+### Running the server
 
 ```shell
 uv run main.py

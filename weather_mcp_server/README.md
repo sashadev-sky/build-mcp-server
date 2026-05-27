@@ -1,17 +1,61 @@
 # Weather MCP Server
 
-A server that exposes 2 tools:
+An **MCP server** that exposes 2 **tools**:
+
 1. `get_alerts`
 2. `get_forecast`
 
-Then we'll connect the server to an **MCP host** (in this case, **Claude for Desktop**).
+To use, run the server then connect it to an **MCP host** (in this case, **Claude for Desktop**).
 
-## Running the server
+- (No client, Claude for Desktop spwans the client internally).
+
+**Implementation**:
+
+- Demonstrates a simple tool decorator
+
+## Setup
+
+### Install dependencies
+
+Pin the project to Python 3.13 so `uv` grabs a prebuilt wheel
 
 ```shell
-cd weather_mcp_server && uv run main.py
+cd weather_mcp_server
+uv python install 3.13
+uv venv --python 3.13
+uv sync
 ```
+
+### Running the server
+
+```shell
+uv run main.py
+```
+
+### Registering the server
+
+Register your server to Claude for Desktop by editing **`claude_desktop_config.json`**:
+
+- In `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows), add it to the `mcpServers` field:
+
+    ```json
+    {
+        "mcpServers": {
+            "weather": {
+                "command": "uv",
+                "args": [
+                    "--directory",
+                    "/Users/sashaboginsky/build-mcp/weather_mcp_server",
+                    "run",
+                    "main.py"
+                ]
+            }
+        }
+    }
+    ```
+
+- Restart Claude Desktop
 
 ## Project structure
 
-- `main.py` calls **`mcp.run(transport="stdio")`**, which starts an MCP server speaking **JSON-RPC** over **stdin/stdout**.
+- `main.py` calls `mcp.run(transport="stdio")`, which starts an MCP server speaking **JSON-RPC** over **stdin/stdout**
