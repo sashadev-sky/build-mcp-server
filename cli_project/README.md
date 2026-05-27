@@ -4,12 +4,14 @@ MCP Chat is a **command-line interface application** that enables interactive ch
 
 - CLI based chatbot that allows users to chat with a set of documents
   - _"what's 1+1?"_
-  - _"can you please summarize the contents of @"_
+  - _"tell me about @"_
 - Claude should be able to read a document **[tool: `read_doc_contents`]**
 - Claude should be able to edit a document **[tool: `edit_document`]**
 - Users can "mention" a document by writing out "@doc_name" **[resource: `docs://documents/{doc_id}`]**
   - The doc's contents will automatically be included as context
 - Users can run a "command" with "/command_name" **[prompt: `format`, prompt: `summarize`]**
+  - _"/format {doc_id}"_
+  - _"/summarize {doc_id}"_
 
 ## Implementation
 
